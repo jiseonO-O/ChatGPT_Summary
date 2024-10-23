@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT-3 Chat</title>
+    <style>
+        .modal {
+            display: none; /* 모달 초기에는 안 보이도록 설정 */
+            position: fixed; /* 페이지와 고정 위치 */
+            z-index: 1; /* 다른 요소 위에 표시 */
+            left: 0;
+            top: 0;
+            width: 100%; /* 모달 너비 전체 화면으로 확장 */
+            height: 100%; /* 모달 높이 전체 화면으로 확장 */
+            overflow: auto; /* 모달 내용이 넘칠 경우 스크롤 가능하도록 설정 */
+            background-color: rgba(0,0,0,0.4); /* 배경색을 반투명 검정으로 설정 */
+        }
+
+        /* 모달 내용 스타일 */
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto; /* 모달이 페이지 상단에서 15% 내려감 */
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%; /* 모달 너비 80%로 설정 */
+        }
+
+        /* 모달 닫기 버튼 스타일 */
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        /* CSS 스타일은 그대로 유지합니다. */
+        .container {
+            display: flex;
+            height: 100vh; /* 뷰포트 높이로 설정 */
+        }
+        .navigation {
+            flex: 1; /* 네비게이션 창의 비율 */
+            border-right: 1px solid #ccc;
+            padding: 10px; /* 좌우 공백 추가 */
+        }
+        .chat-container {
+            flex: 5; /* 채팅 창의 비율 */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; /* 채팅창과 폼 사이에 공간 추가 */
+            background-color: #f0f0f0; /* 백그라운드 색상 변경 */
+        }
+        .chat-list {
+        }
+        .chat-list-item {
+            cursor: pointer;
+        }
+        .chat-list-item:hover {
+            background-color: #f0f0f0;
+        }
+        .chat-message {
+        }
+        .user-message {
+            text-align: right;
+            color: blue;
+        }
+        .gpt-message {
+            color: green;
+        }
+
+        .card {
+        background-color: #f0f0f0;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+        margin-right: 40px;
+    
+    }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="navigation">
+            <img src="/images/newChat.png" alt="Chat Image" id="chatImage" width="200" height="100" style="display: block; margin: 0 auto;">
+            <h2>Chat List</h2>
+            <ul id="chatRoomList"></ul>
+        </section>
+        <section class="chat-container">
+            <div class="chat-content" style="flex-grow: 1; overflow-y: auto;" id="chatContent">
+                <h2>채팅창 나중에 --삭제</h2>
+                <div class="chat-container" id="chatContainer">
+                    <!-- 서버에서 받아온 채팅 내용을 여기에 추가할 거에요 -->
+                </div>
+            </div>
+            <form action="/getResponse" method="POST" style="display: flex; justify-content: center; background-color: #f0f0f0; padding-top: 20px;">
+                <input type="text" id="userPrompt" name="userPrompt" required style="flex-grow: 1; margin-right: 10px;">
+                <button type="submit" id="submitBtn" style="background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Submit</button>
+            </form>
+            <button id="pythonBtn" style="margin-top: 10px;">Run Python Script</button>
+        </section>
+    </div>
+    <div id="myModal" class="modal">
+        <!-- 모달 내용 -->
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <!-- 파이썬 출력이 표시될 곳 -->
+        </div>
+    </div>
+    <script>
+
+
+
+
+document.getElementById('chatRoomList').addEventListener('click', function(event) {
+    // 클릭된 요소가 card 클래스를 가지고 있는지 확인
+    if (event.target.classList.contains('card')) {
+        // 클릭된 Chat Room의 번호 가져오기
+        const chatRoomNo = event.target.dataset.roomNo;
+        console.log(chatRoomNo);
+        // 서버로 해당 Chat Room 번호 전송
+        fetch(`/selectChatRoom/${chatRoomNo}`, {
+            method: 'POST',
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            // 서버 응답 처리
+            return response.json();
+        })
+        .then(data => {
+            // 서버로부터 받은 데이터 처리
+            console.log(data);
+            // 선택된 채팅방에 대한 채팅 내용을 업데이트
+            updateChatMessages(chatRoomNo);
+        })
+        .catch(error => {
+            console.error('There has been a problem with your fetch operation:', error);
+        });
+    }
+});
+
+// 선택된 채팅방의 채팅 메시지를 업데이트하는 함수
+function updateChatMessages(chatRoomNo) {
+    fetch(`/getChatMessages`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = ''; // 채팅창 내용 초기화
+            data.forEach(chatMessage => {
+                const userMessageExists = chatMessage.userMessage !== null && chatMessage.userMessage.trim() !== '';
+                const gptMessageExists = chatMessage.GPTMessage !== null && chatMessage.GPTMessage.trim() !== '';
+
+                if (userMessageExists || gptMessageExists) {
+                    const chatMessageElement = document.createElement('div');
+                    chatMessageElement.classList.add('chat-message');
+                    
+                    if (userMessageExists) {
+                        chatMessageElement.innerHTML += `<p class="user-message">${chatMessage.userMessage}</p>`;
+                    }
+                    
+                    if (gptMessageExists) {
+                        chatMessageElement.innerHTML += `<p class="gpt-message">${chatMessage.GPTMessage}</p>`;
+                    }
+
+                    chatContainer.appendChild(chatMessageElement);
+                }
+            });
+            // 채팅 메시지가 추가된 후 스크롤을 채팅창의 맨 아래로 이동합니다.
+            const chatContent = document.getElementById('chatContent');
+            chatContent.scrollTop = chatContent.scrollHeight;
+        })
+        .catch(error => {
+            console.error('There has been a problem with your fetch operation:', error);
+        });
+}
+
+
+
+
+
+
+
+    </script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('myModal');
+            if (modal) {
+                modal.querySelector('.close').addEventListener('click', function() {
+                    modal.style.display = 'none';
+                });
+            } else {
+                console.error('Modal not found.');
+            }
+
+            document.getElementById('pythonBtn').addEventListener('click', function() {
+                fetch('/runPythonScript', {
+                    method: 'POST'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
+                .then(data => {
+                    modal.style.display = 'block';
+                    let pythonOutput = document.getElementById('pythonOutput');
+                    if (!pythonOutput) {
+                        pythonOutput = document.createElement('div');
+                        pythonOutput.id = 'pythonOutput';
+                        modal.querySelector('.modal-content').appendChild(pythonOutput);
+                    }
+                    pythonOutput.innerHTML = data;
+                })
+                .catch(error => {
+                    console.error('There has been a problem with your fetch operation:', error);
+                });
+            });
+
+            window.onclick = function(event) {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            };
+        });
+    </script>
+    
+    
+
+
+
+    <script>
+
+
+
+document.addEventListener("DOMContentLoaded", function() {
+    // Chat Rooms를 가져와서 목록을 표시합니다.
+    fetch('/getChatRooms')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            const chatRoomList = document.getElementById('chatRoomList');
+            data.data.forEach(chatRoom => {
+                const card = document.createElement('div');
+                card.classList.add('card');
+                card.textContent = `${chatRoom.NO}`;
+                card.dataset.roomNo = chatRoom.NO;
+                chatRoomList.appendChild(card);
+            });
+
+            // 선택된 채팅방의 채팅 메시지를 가져와서 표시합니다.
+            fetch(`/getChatMessages`)
+            .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // 받은 채팅 메시지를 채팅 창에 업데이트합니다.
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = ''; // 채팅창 내용 초기화
+            data.forEach(chatMessage => {
+                const chatMessageElement = document.createElement('div');
+                chatMessageElement.classList.add('chat-message');
+                chatMessageElement.innerHTML = `<p class="${chatMessage.role === 'user' ? 'user-message' : 'gpt-message'}">${chatMessage.userMessage}</p>`;
+                // 새로운 채팅 메시지를 채팅 창의 맨 아래쪽에 추가합니다.
+                chatContainer.appendChild(chatMessageElement);
+            });
+            // 채팅 메시지가 추가된 후 스크롤을 채팅창의 맨 아래로 이동합니다.
+            const chatContent = document.getElementById('chatContent');
+            chatContent.scrollTop = chatContent.scrollHeight;
+        })
+                .catch(error => {
+                    console.error('There has been a problem with your fetch operation:', error);
+                });
+        })
+        .catch(error => {
+            console.error('There has been a problem with your fetch operation:', error);
+        });
+});
+
+
+        document.getElementById("chatImage").addEventListener("click", function() {
+            // 서버로 POST 요청 보내기
+            fetch('/createChatRoom', {
+                method: 'POST',
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // 새로운 채팅방 생성 후 Chat Room 목록 업데이트
+                const chatRoomList = document.getElementById('chatRoomList');
+                const newChatRoom = document.createElement('div');
+                newChatRoom.classList.add('card');
+                newChatRoom.textContent = `${data.roomNo}`;
+                newChatRoom.dataset.roomNo = data.roomNo;
+                chatRoomList.appendChild(newChatRoom);
+            })
+            .catch(error => {
+                console.error('There has been a problem with your fetch operation:', error);
+            });
+        }); 
+
+
+
+        document.querySelector('form').addEventListener('submit', function(event) {
+    setTimeout(function() {
+        updateChatMessages();
+    }, 300); // 1000 밀리초 = 1초
+});
+
+        const ws = new WebSocket('ws://localhost:8081');
+
+        // 웹소켓으로부터 메시지를 받았을 때 실행되는 콜백 함수
+        ws.onmessage = function(event) {
+            if (event.data === 'executeUpdateChatMessages') {
+                updateChatMessages(); // 서버로부터 받은 메시지가 'executeUpdateChatMessages'인 경우 함수 실행
+            }
+        };
+
+    </script>
+</body>
+</html>
